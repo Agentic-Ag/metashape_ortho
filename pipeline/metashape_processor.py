@@ -229,6 +229,7 @@ class MetashapeProcessor:
                     self.logger.info("Processing RGB and multispectral images by their specific naming convention")
                     image_dict = {
                         "RGB": [os.path.join(subfolder_path, file_name) for file_name in os.listdir(subfolder_path) if file_name.endswith(".JPG")],
+                        "RGB": [os.path.join(subfolder_path, file_name) for file_name in os.listdir(subfolder_path) if file_name.endswith("_T.tif")],
                         "NIR": [os.path.join(subfolder_path, file_name) for file_name in os.listdir(subfolder_path) if file_name.endswith("MS_NIR.TIF")],
                         "RE": [os.path.join(subfolder_path, file_name) for file_name in os.listdir(subfolder_path) if file_name.endswith("MS_RE.TIF")],
                         "R": [os.path.join(subfolder_path, file_name) for file_name in os.listdir(subfolder_path) if file_name.endswith("MS_R.TIF")],
