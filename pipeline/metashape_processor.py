@@ -129,14 +129,20 @@ class MetashapeChunkProcessor:
         out_projection.type = Metashape.OrthoProjection.Type.Planar
         out_projection.crs = Metashape.CoordinateSystem("EPSG::4326")
 
+        # --- CONDITION FOR THERMAL ---
+        is_thermal = "THERMAL" in self.chunk.label.upper()
+
         self.chunk.exportRaster(path=ortho_path,
                                 source_data=Metashape.OrthomosaicData,
                                 image_compression=compression,
-                                save_alpha=True,
+                                save_alpha=not is_thermal,
                                 white_background=True,
                                 projection=out_projection)
 
-        logging.info(f"Exported orthomosaic to {ortho_path}")
+        logging.info(
+        f"Exported orthomosaic for chunk {self.chunk.label} "
+        f"(save_alpha={'False' if is_thermal else 'True'}) to {ortho_path}"
+    )
 
 class MetashapeProcessor:
     """
@@ -229,7 +235,7 @@ class MetashapeProcessor:
                     self.logger.info("Processing RGB and multispectral images by their specific naming convention")
                     image_dict = {
                         "RGB": [os.path.join(subfolder_path, file_name) for file_name in os.listdir(subfolder_path) if file_name.endswith(".JPG")],
-                        "RGB": [os.path.join(subfolder_path, file_name) for file_name in os.listdir(subfolder_path) if file_name.endswith("_T.tif")],
+                        "THERMAL": [os.path.join(subfolder_path, file_name) for file_name in os.listdir(subfolder_path) if file_name.endswith("_T.tif")],
                         "NIR": [os.path.join(subfolder_path, file_name) for file_name in os.listdir(subfolder_path) if file_name.endswith("MS_NIR.TIF")],
                         "RE": [os.path.join(subfolder_path, file_name) for file_name in os.listdir(subfolder_path) if file_name.endswith("MS_RE.TIF")],
                         "R": [os.path.join(subfolder_path, file_name) for file_name in os.listdir(subfolder_path) if file_name.endswith("MS_R.TIF")],
