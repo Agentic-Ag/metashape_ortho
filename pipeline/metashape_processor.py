@@ -49,6 +49,58 @@ class MetashapeProject:
         logging.info(f"{len(chunk.cameras)} images loaded in chunk: {chunk_name}")
         return chunk
 
+    def import_aeropoints(self, chunk, gcp_csv_path):
+        """
+        Imports Propeller AeroPoints GCP coordinates from a CSV file into a chunk.
+        
+        AeroPoints CSV format (from Propeller Cloud export):
+            point_name,easting,northing,elevation,accuracy_xy,accuracy_z,crs
+        
+        The CSV is converted to Metashape marker references and applied to the chunk.
+        Photos are matched by clicking the GCP targets visible in the imagery.
+        
+        Args:
+            chunk (Metashape.Chunk): The chunk to add GCP markers to.
+            gcp_csv_path (str): Path to the AeroPoints CSV file.
+        """
+        import csv
+
+        if not os.path.exists(gcp_csv_path):
+            logging.warning(f"AeroPoints CSV not found: {gcp_csv_path} — skipping GCP import")
+            return
+
+        markers_added = 0
+        with open(gcp_csv_path, 'r') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                try:
+                    point_name = row.get('point_name', row.get('name', ''))
+                    easting = float(row.get('easting', row.get('x', 0)))
+                    northing = float(row.get('northing', row.get('y', 0)))
+                    elevation = float(row.get('elevation', row.get('z', 0)))
+                    accuracy_xy = float(row.get('accuracy_xy', row.get('horiz_accuracy', 0.02)))
+                    accuracy_z = float(row.get('accuracy_z', row.get('vert_accuracy', 0.02)))
+
+                    # Create marker in chunk
+                    marker = chunk.addMarker()
+                    marker.label = point_name
+
+                    # Set marker location (Metashape uses [x, y, z] in chunk CRS)
+                    marker.position = Metashape.Vector([easting, northing, elevation])
+                    marker.accuracy = Metashape.Vector([accuracy_xy, accuracy_xy, accuracy_z])
+                    markers_added += 1
+                except (ValueError, KeyError) as e:
+                    logging.warning(f"Skipping AeroPoint row {row}: {e}")
+
+        logging.info(f"Imported {markers_added} AeroPoints GCPs into chunk: {chunk.label}")
+
+        # Optimize alignment using GCPs
+        if markers_added > 0:
+            chunk.optimizeCameras(fit_f=True, fit_cxcy=True, fit_b1=True, fit_b2=True,
+                                  fit_k1k2k3=True, fit_k4=True, fit_p1p2=True, fit_p3=True,
+                                  fit_decentering=True, fit_adpglobal=True)
+            logging.info(f"Optimized camera alignment using {markers_added} GCPs for chunk: {chunk.label}")
+
 class MetashapeChunkProcessor:
     """
     Processes a Metashape chunk, handling various stages of processing such as aligning photos,
@@ -109,12 +161,13 @@ class MetashapeChunkProcessor:
         logging.info(f"Building orthomosaic for chunk: {self.chunk.label}")
         self.chunk.buildOrthomosaic(surface_data=Metashape.DataSource.ModelData)
 
-    def export_raster(self, export_folder):
+    def export_raster(self, export_folder, target_crs="EPSG::4326"):
         """
         Exports the orthomosaic as a raster image to the specified folder.
         
         Args:
             export_folder (str): The folder where the orthomosaic will be saved.
+            target_crs (str): Coordinate reference system for the output (default EPSG::4326).
         """
         ortho_path = os.path.join(export_folder, f"{self.chunk.label}_orthomosaic.tif")
 
@@ -127,7 +180,7 @@ class MetashapeChunkProcessor:
 
         out_projection = Metashape.OrthoProjection()
         out_projection.type = Metashape.OrthoProjection.Type.Planar
-        out_projection.crs = Metashape.CoordinateSystem("EPSG::4326")
+        out_projection.crs = Metashape.CoordinateSystem(target_crs)
 
         # --- CONDITION FOR THERMAL ---
         is_thermal = "THERMAL" in self.chunk.label.upper()
@@ -168,6 +221,8 @@ class MetashapeProcessor:
         self.cpu_enabled = config["cpu_enabled"]
         self.tmp_folder = config["tmp_folder"]
         self.log_file = log_file
+        self.gcp_csv = config.get("gcp_csv", "")  # Optional AeroPoints CSV path
+        self.target_crs = config.get("target_crs", "EPSG::4326")  # Output CRS
 
         # Set up logging
         self.logger = setup_logger(self.log_file)
@@ -255,6 +310,11 @@ class MetashapeProcessor:
                             processor.align_photos()
                             project.save()
 
+                            # Import AeroPoints GCPs if configured
+                            if self.gcp_csv and os.path.exists(self.gcp_csv):
+                                project.import_aeropoints(chunk, self.gcp_csv)
+                                project.save()
+
                             processor.build_depth_maps()
                             project.save()
 
@@ -273,7 +333,7 @@ class MetashapeProcessor:
                                 processor.build_orthomosaic()
                                 project.save()
 
-                            processor.export_raster(export_folder)
+                            processor.export_raster(export_folder, self.target_crs)
                             project.save()
                         except Exception as e:
                             self.logger.error(f"Error processing chunk {subfolder_name}_{channel}: {str(e)}")

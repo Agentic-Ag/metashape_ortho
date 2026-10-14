@@ -1,0 +1,31 @@
+# Grassgum Farm — DJI M3M RGB Mapping Configuration
+# 
+# Used with the Metashape ortho processing pipeline.
+# AeroPoints GCPs from Propeller Cloud are imported for cm-level accuracy.
+# Target CRS: EPSG::28356 (GDA94 / MGA Zone 56) — covers NSW North Coast.
+
+# GPU: use GPU 0 for processing
+gpu_option: '0'
+
+# CPU: disabled (GPU-only for speed)
+cpu_enabled: false
+
+# Input folder: contains *_unprocessed/ subfolders with photos/chunks
+# Each subfolder: <name>_unprocessed/photos/<chunk_name>/*.JPG
+input_folder: 'D:/Grassgum/Drone_Flights/'
+
+# Temporary working folder for Metashape project files
+tmp_folder: 'D:/Grassgum/Drone_Flights/_tmp_metashape'
+
+# Log directory
+log_dir: 'D:/Grassgum/Drone_Flights/log-files'
+
+# AeroPoints GCP CSV (exported from Propeller Cloud)
+# Format: point_name,easting,northing,elevation,accuracy_xy,accuracy_z,crs
+# Leave empty to skip GCP import (RTK-only processing)
+gcp_csv: 'D:/Grassgum/AeroPoints/gcp_export.csv'
+
+# Output coordinate reference system
+# EPSG::28356 = GDA94 / MGA Zone 56 (NSW North Coast, Grassgum Farm location)
+# EPSG::4326  = WGS84 (global, default)
+target_crs: 'EPSG::28356'
