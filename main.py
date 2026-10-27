@@ -30,10 +30,10 @@ def display_summary(input_folder, gpu_option, cpu_enabled, log_file):
                     subfolder_path = os.path.join(photos_dir, subfolder_name)
                     if os.path.isdir(subfolder_path):
                         print(f"    - Chunk: {subfolder_name}")
-    
-    # Check free disk space before proceeding
+
+    # Check free disk space on the input volume before proceeding
     try:
-        check_free_space(100, "/mnt/data/")
+        check_free_space(100, input_folder)
         print("\nDo you want to proceed with these settings? (yes/no)")
     except RuntimeError as e:
         print(f"Error during free space check: {e}")
@@ -49,13 +49,18 @@ def main():
     3. Confirm with the user to proceed.
     4. Initialize and process folders using MetashapeProcessor.
     """
-    if len(sys.argv) != 2:
-        print("Usage: python3 main.py <config_file>")
+    # argv may include a leading "--" separator when launched via
+    # `metashape.exe -r main.py -- <config> --yes`
+    args = [a for a in sys.argv[1:] if a != '--']
+    assume_yes = any(a in ('-y', '--yes') for a in args)
+    config_args = [a for a in args if a not in ('-y', '--yes')]
+    if len(config_args) != 1:
+        print("Usage: python3 main.py <config_file> [--yes]")
         sys.exit(1)
 
     try:
         # Load configuration from the specified YAML file
-        config = load_config(sys.argv[1])
+        config = load_config(config_args[0])
         input_folder = config["input_folder"]
         gpu_option = config["gpu_option"]
         cpu_enabled = config["cpu_enabled"]
@@ -80,10 +85,11 @@ def main():
     # Display summary and ask for confirmation
     display_summary(input_folder, gpu_option, cpu_enabled, log_file)
 
-    user_input = input("Type 'yes' to proceed or 'no' to abort: ").strip().lower()
-    if user_input != 'yes':
-        print("Aborting the script.")
-        sys.exit(0)
+    if not assume_yes:
+        user_input = input("Type 'yes' to proceed or 'no' to abort: ").strip().lower()
+        if user_input != 'yes':
+            print("Aborting the script.")
+            sys.exit(0)
 
     # Initialize MetashapeProcessor and process the folders
     try:

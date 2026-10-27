@@ -1,8 +1,12 @@
 import os
 import sys
+import json
 import shutil
 import logging
-import yaml
+try:
+    import yaml
+except ImportError:
+    yaml = None  # Metashape's bundled Python has no PyYAML — fall back to JSON
 from datetime import datetime
 
 class StreamToLogger:
@@ -184,10 +188,15 @@ def load_config(config_file='config.yaml'):
     if not os.path.exists(config_file):
         logging.error(f"Config file not found: {config_file}")
         raise FileNotFoundError(f"Config file {config_file} does not exist.")
-    
+
     with open(config_file, 'r') as file:
-        config = yaml.safe_load(file)
-    
+        if yaml is not None:
+            config = yaml.safe_load(file)
+        else:
+            # JSON is valid YAML — adapter writes configs as JSON so they
+            # parse under Metashape's bundled interpreter too.
+            config = json.load(file)
+
     logging.info(f"Configuration loaded from {config_file}")
     return config
 

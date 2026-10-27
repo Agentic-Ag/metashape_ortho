@@ -126,6 +126,22 @@ class MetashapeChunkProcessor:
         self.chunk.matchPhotos(downscale=1,reference_preselection=True,keypoint_limit=60000,tiepoint_limit=15000,filter_mask=False,guided_matching=True,mask_tiepoints=False)
         self.chunk.alignCameras()
 
+    def calibrate_reflectance(self):
+        """
+        Radiometric calibration for a multispectral (DJI M3M) chunk.
+
+        Uses the camera's downwelling light sensor (DLS) metadata embedded in
+        each MS frame plus any reflectance-panel frames, so exported index
+        values are reflectance-based rather than raw DN.
+        """
+        try:
+            self.chunk.calibrateReflectance(use_reflectance_panels=True, use_sun_sensor=True)
+            logging.info(f"Reflectance calibrated (sun sensor + panels) for chunk: {self.chunk.label}")
+        except AttributeError:
+            logging.warning("calibrateReflectance not available in this Metashape version — skipping")
+        except Exception as e:
+            logging.warning(f"Reflectance calibration skipped for {self.chunk.label}: {e}")
+
     def build_depth_maps(self):
         """
         Builds depth maps for the chunk.
@@ -297,18 +313,44 @@ class MetashapeProcessor:
                         "G": [os.path.join(subfolder_path, file_name) for file_name in os.listdir(subfolder_path) if file_name.endswith("MS_G.TIF")],
                     }
 
-                    for channel, image_list in image_dict.items():
+                    ms_bands = [b for b in ("G", "R", "RE", "NIR") if image_dict[b]]
+
+                    # Chunk jobs: (chunk_name, image_list, is_multispec).
+                    # DJI M3M: ALL bands go into ONE chunk — Metashape detects
+                    # the multi-camera rig (RGB master + G/R/RE/NIR slaves) so a
+                    # single alignment co-registers every band for NDVI.
+                    # Thermal (M3T) is a different sensor — always its own chunk.
+                    jobs = []
+                    if ms_bands:
+                        combined = image_dict["RGB"] + [f for b in ms_bands for f in image_dict[b]]
+                        jobs.append((subfolder_name, combined, True))
+                    elif image_dict["RGB"]:
+                        jobs.append((f"{subfolder_name}_RGB", image_dict["RGB"], False))
+                    if image_dict["THERMAL"]:
+                        jobs.append((f"{subfolder_name}_THERMAL", image_dict["THERMAL"], False))
+
+                    for chunk_name, image_list, is_ms in jobs:
                         try:
-                            if not image_list:
-                                continue
-                            
-                            self.logger.info(f"Adding {channel} photos to chunk: {subfolder_name}_{channel}")
-                            chunk_name = f"{subfolder_name}_{channel}"
+                            self.logger.info(f"Adding {len(image_list)} photos to chunk: {chunk_name}")
                             chunk = project.add_chunk(chunk_name, image_list)
+
+                            if is_ms:
+                                n_sensors = len(chunk.sensors)
+                                self.logger.info(f"Chunk {chunk_name}: {n_sensors} sensor(s) detected")
+                                if n_sensors < 2:
+                                    self.logger.warning(
+                                        f"No multi-camera rig detected for {chunk_name} — "
+                                        f"MS bands will not co-register. Check sensor "
+                                        f"layout in the Metashape GUI before trusting NDVI.")
+
                             processor = MetashapeChunkProcessor(chunk)
 
                             processor.align_photos()
                             project.save()
+
+                            if is_ms:
+                                processor.calibrate_reflectance()
+                                project.save()
 
                             # Import AeroPoints GCPs if configured
                             if self.gcp_csv and os.path.exists(self.gcp_csv):
@@ -336,7 +378,7 @@ class MetashapeProcessor:
                             processor.export_raster(export_folder, self.target_crs)
                             project.save()
                         except Exception as e:
-                            self.logger.error(f"Error processing chunk {subfolder_name}_{channel}: {str(e)}")
+                            self.logger.error(f"Error processing chunk {chunk_name}: {str(e)}")
                             pass
 
         try:
